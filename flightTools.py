@@ -1,9 +1,11 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from numpy import array as A
 from matplotlib.pyplot import subplots
 from matplotlib.patches import Rectangle, Ellipse
 from matplotlib.animation import FuncAnimation
 from numpy.linalg import norm
+
 
 class Rocket:
 
@@ -16,7 +18,7 @@ class Rocket:
         self.fuel_mass = 5000                       # Initial mass of the fuel only [kg]
         self.width = 2                              # Width [m]
         self.height = 20                            # Height [m]
-        self.impact_velocity = 3.0                  # Speed above which rocket crashes on impact [m/s]
+        self.impact_velocity = 5.0                  # Speed above which rocket crashes on impact [m/s]
         self.exhaust_velocity = A([0, 200 * 9.81])  # Specific impulse of engine [s]
         self.max_thrust = 100000                    # Maximum thust of engine [N]
 
@@ -126,7 +128,7 @@ class Flight:
 
         else:
             self.status = np.append(self.status, [1])
-
+            
     def status_string(self):
         """
         Returns the current status of the rocket, given a code 0, 1 or 2
@@ -151,60 +153,154 @@ class FlightAnimation:
         self.animate(filename)
 
     def animate(self, filename):
-
         # Get the position for convenience
         pos_x = self.flight.position[0][0]
         pos_y = self.flight.position[0][1]
+        leg_h = 0.2 * self.flight.rocket.height
+
+        # Get the centre of the rocket
+        cen_x = pos_x
+        cen_y = pos_y + self.flight.rocket.height / 2 + leg_h / 2
 
         # Set an appropriate y-scale
-        frame_scale = (self.flight.position[:, 1].max() + self.flight.rocket.height) / 2
+        frame_scale = self.flight.sim_scale / 2
 
         # Initialise figure
-        fig, ax = subplots(figsize=(8, 8))
-        ax.set(xlim=[- frame_scale, frame_scale], ylim=[0, 2 * frame_scale],
-               ylabel='Altitude (m)', xticks=[])
+        fig, ax = subplots(figsize=(8, 8), dpi=150)
+        ax.set_facecolor('#f7f7f7')
+        ax.set(xlim=[- frame_scale, frame_scale], ylim=[-5.0, 2 * frame_scale],
+               ylabel='Altitude (m)', xlabel='')
 
-        # Draw the rocket as a rectangle
-        self.rocket = Rectangle((pos_x - self.flight.rocket.width / 2, pos_y),
-                                self.flight.rocket.width,
-                                self.flight.rocket.height,
-                                angle=0.0, color='C0', zorder=2)
+        telemetry = 'Status: {:>7s}\nT Vel:    {:>5.2f}\nH Vel:    {:>5.2f}\nV Vel:    {:>5.2f}\nScore:    {:>5.2f}'.format(
+            self.flight.status_string(0),
+            norm(self.flight.velocity[0]), self.flight.velocity[0][0], self.flight.velocity[0][1], self.flight.score[0])
+        self.t = ax.text(-45.0, 95, telemetry, ha='left', va='top', fontfamily='monospace')
 
-        # Draw the thrust as an ellipse
-        self.thruster = Ellipse((pos_x, pos_y),
-                                self.flight.rocket.width,
-                                self.flight.rocket.height * self.flight.throttle[0],
-                                color='C1', zorder=1)
+        self.leg_s = np.tan(30.0 * np.pi / 180.0) * leg_h
+        self.leg_l = leg_h / np.cos(30.0 * np.pi / 180.0)
+        self.l1 = Rectangle((pos_x - self.flight.rocket.width / 2 - 1.1 * self.leg_s, pos_y), 0.1 * leg_h, 1.1 * self.leg_l,
+                            angle=-30.0, color='#879ab7', zorder=5)
+        self.l2 = Rectangle((pos_x + self.flight.rocket.width / 2 + 0.95 * self.leg_s, pos_y - leg_h * 0.05), 0.1 * leg_h,
+                            1.1 * self.leg_l, angle=30.0, color='#879ab7', zorder=5)
 
-        # Add these to the plot
-        ax.add_artist(self.rocket)
-        ax.add_artist(self.thruster)
+        self.rocket = Rectangle((pos_x - self.flight.rocket.width / 2, pos_y + leg_h), self.flight.rocket.width,
+                                self.flight.rocket.height - leg_h,
+                                angle=0.0, color='#879ab7', zorder=2)
+        self.t0 = Ellipse((pos_x, pos_y + leg_h), self.flight.rocket.width * 0.8,
+                          self.flight.rocket.height * thrust_parse(0)[0],
+                          color='#e28b44', zorder=1)
+
+        booster_width = self.flight.rocket.width * 0.3
+        self.b1 = Rectangle((cen_x - self.flight.rocket.width / 2, cen_y - 2.5 * booster_width),
+                            booster_width, booster_width * 5, color='#4e596d', zorder=3)
+        self.b2 = Rectangle((cen_x + self.flight.rocket.width / 2 - booster_width, cen_y - 2.5 * booster_width),
+                            booster_width, booster_width * 5, color='#4e596d', zorder=3)
+        self.t1 = Ellipse((cen_x - self.flight.rocket.width / 2, cen_y),
+                          self.flight.rocket.width * 2 * thrust_parse(self.flight.throttle[0])[1], booster_width * 2,
+                          color='#e28b44')
+        self.t2 = Ellipse((cen_x + self.flight.rocket.width / 2, cen_y),
+                          self.flight.rocket.width * 2 * thrust_parse(self.flight.throttle[0])[2], booster_width * 2,
+                          color='#e28b44')
+
+        self.ground = Rectangle((- frame_scale, -5), 2 * frame_scale, 5, color='#bcbcbc')
+        self.base = Rectangle((-self.flight.base_size, - 5), 2 * self.flight.base_size, 5, color='#686868')
+
+        for patch in [self.rocket, self.t0, self.b1, self.b2,
+                      self.t1, self.t2, self.l1, self.l2,
+                      self.ground, self.base]:
+            ax.add_artist(patch)
+
         fig.tight_layout()
+
+        # Add an extra second to the end of the animation
+        extra_frames = int(1.0 / self.flight.simulation_resolution)
 
         # Animate the plot according to teh update function (below)
         movie = FuncAnimation(fig, self.update_animation,
                               interval=(1000 * self.flight.simulation_resolution),
-                              frames=len(self.flight.position))
+                              frames=(len(self.flight.position) + extra_frames))
         movie.save(filename)
 
-    def update_animation(self, i):
+    def update_animation(self, j):
+
+        if j > (len(self.flight.position) - 1):
+            i = len(self.flight.position) - 1
+            throttle = 0
+        else:
+            i = j
+            throttle = self.flight.throttle[i]
 
         pos_x = self.flight.position[i][0]
         pos_y = self.flight.position[i][1]
+        leg_h = 0.2 * self.flight.rocket.height
+        booster_width = self.flight.rocket.width * 0.3
 
-        # Move rocket and thruster to current position
-        self.rocket.update({'xy': (pos_x - self.flight.rocket.width / 2, pos_y)})
-        self.thruster.center = (pos_x, pos_y)
-        self.thruster.height = self.flight.rocket.height * self.flight.throttle[i]
+        # Get the centre of the rocket
+        cen_x = pos_x
+        cen_y = pos_y + self.flight.rocket.height / 2 + leg_h / 2
+
+        telemetry = 'Status:   {:>7s}\nT Vel:    {:>7.2f}\nH Vel:    {:>7.2f}\nV Vel:    {:>7.2f}\nScore:    {:>7.2f}'.format(
+            self.flight.status_string(i),
+            norm(self.flight.velocity[i]), self.flight.velocity[i][0], self.flight.velocity[i][1], self.flight.score[:(i+1)].sum())
+        self.t.set_text(telemetry)
+
+        leg_s = np.tan(30.0 * np.pi / 180.0) * leg_h
+        leg_l = leg_h / np.cos(30.0 * np.pi / 180.0)
+
+        self.rocket.update({'xy': (pos_x - self.flight.rocket.width / 2, pos_y + leg_h)})
+        self.t0.center = (pos_x, pos_y + leg_h)
+        self.t0.height = 0.8 * self.flight.rocket.height * thrust_parse(throttle)[0]
+
+        self.l1.update({'xy': (pos_x - self.flight.rocket.width / 2 - 1.1 * leg_s, pos_y)})
+        self.l2.update({'xy': (pos_x + self.flight.rocket.width / 2 + 0.95 * leg_s, pos_y - leg_h * 0.05)})
+
+        self.b1.update({'xy': (cen_x - self.flight.rocket.width / 2, cen_y - 2.5 * booster_width)})
+        self.b2.update({'xy': (cen_x + self.flight.rocket.width / 2 - booster_width, cen_y - 2.5 * booster_width)})
+
+        self.t1.center = (cen_x - self.flight.rocket.width / 2, cen_y)
+        self.t1.width = self.flight.rocket.width * 2 * thrust_parse(throttle)[1]
+
+        self.t2.center = (cen_x + self.flight.rocket.width / 2, cen_y)
+        self.t2.width = self.flight.rocket.width * 2 * thrust_parse(throttle)[2]
+
+
+def thrust_parse(j):
+    """
+    j in binary gives the appropriate thrust selection:
+    Translation:
+    Input    0 1 2 4 5 6
+    Output...
+    Main     0 0 0 1 1 1 2^2
+    Left     0 0 1 0 0 1 2^1
+    Right    0 1 0 0 1 0 2^0
+    """
+    if j > 2:
+        k = j + 1
+    else:
+        k = j
+    return A([x for x in '{0:03b}'.format(k)]).astype(int)
 
 
 def template_controller(flight):
     """
-    This is a template flight control function that performs
-    a suicide burn for the default initial conditions
+    Template for a function that decides on the right
+    throttle given the current flight data
+
+    This example performs the most fuel efficient safe landing
+    for the initial conditions
     """
 
-    if 3.0 < flight.position[-1][1] < 58.4:
+    d_i = flight.position[0][1]
+    m_i = flight.mass[0]
+    f_t = flight.rocket.max_thrust
+    imp = flight.rocket.exhaust_velocity[1]
+    a = np.sqrt(2 * 9.81 * d_i)
+
+    t = (m_i - (m_i / np.exp(a / imp))) / (f_t / imp)
+    d = t * (a / 2)
+
+    # Start burn at the calculated height
+    if flight.position[-1][1] <= (d + 0.6):
         throttle = 1.0
     else:
         throttle = 0.0
@@ -212,32 +308,43 @@ def template_controller(flight):
     return throttle
 
 
+def template_score_calc(flight):
+    """
+    Template for a function that calculates the score
+    given the current status of the flight
+
+    In this example the score is just the negative height
+    so it decreases as the rocket gets further from the ground
+    """
+    return flight.position[-1][1]
+
+
 def flight_data_plot(flight, save=''):
     """
     Plots various data for a given flight
     """
 
-    fig, ax = subplots(5, 1)
+    plt.style.use('ggplot')
+    fig, ax = plt.subplots(6, 1)
 
     labels = ['Position (m)', 'Velocity (ms$^{-1}$)', 'Acceleration (ms$^{-2}$)',
-              'Fuel Used (%)', 'Thrust (%)']
+              'Fuel Used (%)', 'Throttle (%)', 'Score']
 
     y_axis = [flight.position[:, 1], flight.velocity[:, 1],
               flight.acceleration[:, 1],
               100.0 * (flight.mass - flight.rocket.hull_mass) / flight.rocket.fuel_mass,
-              100.0 * flight.throttle]
+              100.0 * flight.throttle, flight.score]
 
     for i, a in enumerate(ax):
         a.plot(flight.time, y_axis[i], color=('C%d' % i))
         a.set_ylabel(labels[i])
         a.set(xlim=[0, flight.time.max()])
-        if i < 4:
-            a.set_xticks([])
+        if i < 5:
+            a.set_xticklabels([])
     ax[4].set_xlabel('Time (s)')
 
-    fig.tight_layout()
-    fig.subplots_adjust(hspace=0.0)
-    fig.set_size_inches(10, 10)
+    fig.subplots_adjust(hspace=0.05)
+    fig.set_size_inches(10, 12)
 
     if save:
         fig.savefig(save)
