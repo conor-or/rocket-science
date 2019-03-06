@@ -174,7 +174,7 @@ class FlightAnimation:
         telemetry = 'Status: {:>7s}\nT Vel:    {:>5.2f}\nH Vel:    {:>5.2f}\nV Vel:    {:>5.2f}\nScore:    {:>5.2f}'.format(
             self.flight.status_string(0),
             norm(self.flight.velocity[0]), self.flight.velocity[0][0], self.flight.velocity[0][1], self.flight.score[0])
-        self.t = ax.text(-45.0, 95, telemetry, ha='left', va='top', fontfamily='monospace')
+        self.t = ax.text(cen_x + leg_h, pos_y + self.flight.rocket.height, telemetry, ha='left', va='top', fontname='monospace', alpha=0.5)
 
         self.leg_s = np.tan(30.0 * np.pi / 180.0) * leg_h
         self.leg_l = leg_h / np.cos(30.0 * np.pi / 180.0)
@@ -242,6 +242,7 @@ class FlightAnimation:
         telemetry = 'Status:   {:>7s}\nT Vel:    {:>7.2f}\nH Vel:    {:>7.2f}\nV Vel:    {:>7.2f}\nScore:    {:>7.2f}'.format(
             self.flight.status_string(i),
             norm(self.flight.velocity[i]), self.flight.velocity[i][0], self.flight.velocity[i][1], self.flight.score[:(i+1)].sum())
+        self.t.set_position((cen_x + leg_h, pos_y + self.flight.rocket.height))
         self.t.set_text(telemetry)
 
         leg_s = np.tan(30.0 * np.pi / 180.0) * leg_h
